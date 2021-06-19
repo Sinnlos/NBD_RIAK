@@ -4,31 +4,72 @@ import com.google.gson.Gson;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Scanner;
 
 public class BookController {
 
-    public static String sendRequest(String req) throws IOException {
-        String command = req;
-        Process process = Runtime.getRuntime().exec(command);
-        BufferedReader iny = new BufferedReader(
-                new InputStreamReader(process.getInputStream()));
-        String output;
-        StringBuffer response = new StringBuffer();
+    public static String sendRequest(String req, String body, String method) throws IOException {
 
-        while ((output = iny.readLine()) != null) {
-            response.append(output);
+        String inline = "";
+        String respMessage = "";
+
+        URL url = new URL(req);
+        HttpURLConnection http = (HttpURLConnection)url.openConnection();
+
+        if(method == "GET"){
+            respMessage = http.getResponseMessage();
+            http.disconnect();
+
+            if(http.getResponseCode() == 200){
+                Scanner scanner = new Scanner(url.openStream());
+                while (scanner.hasNext()) {
+                    inline += scanner.nextLine();
+                }
+                scanner.close();
+
+                return inline;
+            }
+            else{
+                return respMessage;
+            }
         }
-        iny.close();
+        else if(method=="POST" || method=="PUT"){
+            http.setRequestMethod(method);
+            http.setDoOutput(true);
+            http.setRequestProperty("Content-Type", "application/json");
+            byte[] out = body.getBytes(StandardCharsets.UTF_8);
 
-        return response.toString();
+            OutputStream stream = http.getOutputStream();
+            stream.write(out);
+
+            http.disconnect();
+
+            return http.getResponseMessage();
+        }
+        else if(method=="DELETE"){
+            http.setRequestMethod(method);
+
+            http.disconnect();
+
+            return http.getResponseMessage();
+        }
+        else{
+            return "";
+        }
+
     }
 
-    public static String getBook(String isbn, String bucketName, String address) throws IOException {
-        String req = "curl "+address+"/buckets/"+bucketName+"/keys/"+isbn;
-        String b = sendRequest(req);
+    public static String getBook(String isbn, String address) throws IOException {
+        String req = address+isbn;
+        String b = sendRequest(req, "", "GET");
 
-        if(b.equals("not found")){
+
+        if(b.equals("Object Not Found")){
             return "Book with ISBN: "+ isbn +" was not found";
         }else{
             Book book = new Gson().fromJson(b, Book.class);
@@ -39,21 +80,21 @@ public class BookController {
 
     }
 
-    public static String addBook(Book book, String bucketName, String address) throws IOException {
-       String command = "curl –XPUT -H \"Content-Type: application/json\" -d " + new Gson().toJson(book) +"  "+address+"/buckets/"+bucketName+"/keys/"+book.isbn;
-       sendRequest(command);
+    public static String addBook(Book book, String address) throws IOException {
+       String command = address+book.isbn;
+       sendRequest(command, new Gson().toJson(book),"POST");
        return "Your book was added";
     }
 
-    public static String updateBook(Book book, String bucketName, String address) throws IOException {
-        String command = "curl –XPUT -H \"Content-Type: application/json\" -d " + new Gson().toJson(book) +"  "+address+"/buckets/"+bucketName+"/keys/"+book.isbn;
-        sendRequest(command);
+    public static String updateBook(Book book, String address) throws IOException {
+        String command = address+book.isbn;
+        sendRequest(command, new Gson().toJson(book),"PUT");
         return "Your book was updated";
     }
 
-    public static String deleteBook(String isbn, String bucketName, String address) throws IOException {
-        String req = "curl -XDELETE "+address+"/buckets/"+bucketName+"/keys/"+isbn;
-        String b = sendRequest(req);
+    public static String deleteBook(String isbn, String address) throws IOException {
+        String req = address+isbn;
+        sendRequest(req,"", "DELETE");
 
         return "Book with ISBN: "+isbn+" was deleted\n------------";
     }
